@@ -1,0 +1,20 @@
+[package]
+name = "torproject"
+version = "0.0.0"
+edition = "2021"
+description = "Tor Project for Rust"
+categories = ["web-programming", "network-programming"]
+homepage = "https://github.com/EstebanBorai/torproject"
+repository = "https://github.com/EstebanBorai/torproject"
+readme = "README.md"
+keywords = ["tor", "torproject", "downloader", "api"]
+license = "MIT OR Apache-2.0"
+authors = ["Esteban Borai <estebanborai@gmail.com>"]
+
+[dependencies]
+anyhow = "1.0.95"
+dirs = "5.0.1"
+reqwest = { version = "0.12" }
+
+[dev-dependencies]
+tokio = { version = "1.43", features = ["full"] }
