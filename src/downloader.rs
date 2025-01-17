@@ -1,10 +1,16 @@
-use std::{fmt::Display, fs::File, io, path::PathBuf};
+use std::fmt::Display;
+use std::fs::{create_dir, File};
+use std::io;
+use std::path::PathBuf;
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use dirs::cache_dir;
+use flate2::read::GzDecoder;
+use tar::Archive;
+use tracing::info;
 
 const DEFAULT_VERSION: &str = "14.0.4";
-const DOWNLOAD_DIRECTORY: &str = "TorProjectRustAssets";
+const DOWNLOAD_DIRECTORY: &str = "RustTorProject";
 
 /// Tor Build Targets Available
 pub enum Target {
@@ -95,12 +101,11 @@ impl Downloader {
     }
 
     /// Downloads the Tor Expert Bundle and returns the path to its assets.
-    pub async fn download(&self) -> Result<PathBuf> {
-        let mut download_path =
-            cache_dir().ok_or(Error::msg("No cache directory available on this platform."))?;
-        download_path.push(DOWNLOAD_DIRECTORY);
-
+    pub async fn download(&self) -> Result<()> {
         let download_url = self.download_url();
+
+        info!(%download_url, "Downloading Tor Expert Bundle.");
+
         let bytes = reqwest::get(download_url)
             .await
             .context("Failed to download Tor Expert Bundle from origin.")?
@@ -108,24 +113,61 @@ impl Downloader {
             .await
             .context("Failed to retrieve files from response.")?
             .to_vec();
-        let mut bytes = bytes.as_slice();
-        let mut output =
-            File::create_new(self.tarball_name()).context("Failed to create output file.")?;
 
-        io::copy(&mut bytes, &mut output).context("Failed to copy output bytes.")?;
+        self.store_downloaded_assets(bytes)?;
+        self.decompress_tarball()?;
 
-        Ok(download_path)
+        Ok(())
+    }
+
+    pub fn download_dir_path(&self) -> PathBuf {
+        let mut download_path =
+            cache_dir().expect("No cache directory available on this platform.");
+        download_path.push(DOWNLOAD_DIRECTORY);
+        download_path
+    }
+
+    pub fn download_tarball_path(&self) -> PathBuf {
+        self.download_dir_path().join(self.tarball_name())
+    }
+
+    fn decompress_tarball(&self) -> Result<()> {
+        let tarball_path = self.download_tarball_path();
+        let tar_gz = File::open(tarball_path)?;
+        let tar = GzDecoder::new(tar_gz);
+        let mut archive = Archive::new(tar);
+
+        info!(download_dir_path=?self.download_dir_path(), "Unpacking tarball.");
+
+        archive.unpack(self.download_dir_path())?;
+
+        Ok(())
     }
 
     fn download_url(&self) -> String {
         format!("https://archive.torproject.org/tor-package-archive/torbrowser/{version}/tor-expert-bundle-{target}-{version}.tar.gz",
-      target=self.target,
-      version=self.version)
+          target=self.target,
+          version=self.version)
+    }
+
+    fn store_downloaded_assets(&self, bytes: Vec<u8>) -> Result<()> {
+        let download_path = self.download_dir_path();
+
+        create_dir(&download_path).context("Failed te create download directory.")?;
+        info!(?download_path, "Storing Tor Artifacts.");
+
+        let mut bytes = bytes.as_slice();
+        let mut output = File::create_new(self.download_tarball_path())
+            .context("Failed to create output tarball file.")?;
+
+        io::copy(&mut bytes, &mut output).context("Failed to copy output bytes.")?;
+
+        Ok(())
     }
 
     fn tarball_name(&self) -> String {
         format!(
-            "tor-expert-bundle-{target}-{version}",
+            "tor-expert-bundle-{target}-{version}.tar.gz",
             target = self.target,
             version = self.version
         )
