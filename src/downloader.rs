@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use std::fs::{create_dir, File};
+use std::fs::{create_dir, remove_file, File};
 use std::io;
 use std::path::PathBuf;
 
@@ -7,10 +7,9 @@ use anyhow::{Context, Result};
 use dirs::cache_dir;
 use flate2::read::GzDecoder;
 use tar::Archive;
-use tracing::info;
+use tracing::{debug, info};
 
-const DEFAULT_VERSION: &str = "14.0.4";
-const DOWNLOAD_DIRECTORY: &str = "RustTorProject";
+use crate::{DEFAULT_VERSION, DOWNLOAD_DIRECTORY};
 
 /// Tor Build Targets Available
 pub enum Target {
@@ -100,6 +99,11 @@ impl Downloader {
         Self { target, version }
     }
 
+    #[inline]
+    pub fn version(&self) -> &String {
+        &self.version
+    }
+
     /// Downloads the Tor Expert Bundle and returns the path to its assets.
     pub async fn download(&self) -> Result<()> {
         let download_url = self.download_url();
@@ -153,11 +157,22 @@ impl Downloader {
     fn store_downloaded_assets(&self, bytes: Vec<u8>) -> Result<()> {
         let download_path = self.download_dir_path();
 
-        create_dir(&download_path).context("Failed te create download directory.")?;
+        if !download_path.exists() {
+            create_dir(&download_path).context("Failed to create download directory.")?;
+        }
+
         info!(?download_path, "Storing Tor Artifacts.");
 
         let mut bytes = bytes.as_slice();
-        let mut output = File::create_new(self.download_tarball_path())
+        let download_tarball_path = self.download_tarball_path();
+
+        if download_tarball_path.exists() {
+            debug!(download_tarball_path=%download_tarball_path.display(), "Found output file tarball. Clearing.");
+            remove_file(&download_tarball_path)
+                .context("Failed to delete previous Tor Cached installation.")?;
+        }
+
+        let mut output = File::create_new(&download_tarball_path)
             .context("Failed to create output tarball file.")?;
 
         io::copy(&mut bytes, &mut output).context("Failed to copy output bytes.")?;
