@@ -29,6 +29,7 @@ impl Tor {
     }
 
     pub fn run(&self) -> Result<Child> {
+        // https://stackoverflow.com/questions/34611742/how-do-i-read-the-output-of-a-child-process-without-blocking-in-rust
         let bin_path = self.tor_bin_dir_path();
         let tor_bin = bin_path.join("tor");
         let child = Command::new(tor_bin)
