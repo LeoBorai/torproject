@@ -68,8 +68,13 @@ impl Tor {
         Ok(pid)
     }
 
-    pub fn kill(&mut self) -> Result<()> {
-        if let Some(pid) = &mut self.pid {
+    pub fn kill(&self) -> Result<()> {
+        use nix::sys::signal::{SIGKILL, kill};
+        use nix::unistd::Pid;
+
+        if let Some(pid) = &self.pid {
+            let pid = Pid::from_raw(*pid as i32);
+            kill(pid, Some(SIGKILL))?;
             return Ok(());
         }
 
