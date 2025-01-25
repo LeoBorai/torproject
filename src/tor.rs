@@ -41,7 +41,6 @@ impl Tor {
     }
 
     pub async fn run(&mut self) -> Result<u32> {
-        // https://stackoverflow.com/questions/34611742/how-do-i-read-the-output-of-a-child-process-without-blocking-in-rust
         let bin_path = self.tor_bin_dir_path();
         let tor_bin = bin_path.join("tor");
         let mut child = Command::new(tor_bin)
@@ -114,10 +113,4 @@ mod tests {
 
         assert_eq!(tor_pid, instance_pid);
     }
-
-    // #[tokio::test]
-    // async fn runs_tor_process() {
-    //     let tor = Tor::setup().await.expect("Failed to setup a Tor instance.");
-    //     let process = tor.run().expect("Failed to spawn Tor process.");
-    // }
 }
