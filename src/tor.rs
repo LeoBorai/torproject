@@ -21,7 +21,7 @@ impl Tor {
     /// of [`Tor`] to interact with Expert Bundle binaries.
     pub async fn setup() -> Result<Tor> {
         let downloader = Downloader::default();
-        // downloader.download().await?;
+        downloader.download().await?;
 
         Ok(Tor {
             pid: None,
