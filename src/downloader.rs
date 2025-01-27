@@ -5,10 +5,10 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
-use tar::Archive;
-use tracing::{debug, info};
 use reqwest::Client;
 use scraper::{Html, Selector};
+use tar::Archive;
+use tracing::{debug, info};
 
 use crate::{VersionSelection, DEFAULT_VERSION, DOWNLOAD_DIRECTORY};
 
@@ -107,9 +107,9 @@ impl DownloadOptions {
     }
 
     pub async fn build(self) -> Result<Downloader> {
-        let download_path = self.download_path.unwrap_or_else(|| 
+        let download_path = self.download_path.unwrap_or_else(|| {
             Downloader::default_download_path().expect("Failed to get default download path")
-        );
+        });
         let target = self.target.unwrap_or_default();
         let version_selection = self.version_selection.unwrap_or_default();
         let version = Downloader::resolve_version(&version_selection).await?;
@@ -257,10 +257,10 @@ impl Downloader {
             .send()
             .await
             .context("Failed to fetch Tor versions")?;
-            
+
         let html = response.text().await?;
         let document = Html::parse_document(&html);
-        
+
         let selector = Selector::parse("a").unwrap();
         let versions: Vec<String> = document
             .select(&selector)
@@ -292,8 +292,10 @@ impl Downloader {
                         }
                     })
                     .max_by(|a, b| {
-                        let ver_a = semver::Version::parse(a).unwrap_or_else(|_| semver::Version::new(0,0,0));
-                        let ver_b = semver::Version::parse(b).unwrap_or_else(|_| semver::Version::new(0,0,0));
+                        let ver_a = semver::Version::parse(a)
+                            .unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+                        let ver_b = semver::Version::parse(b)
+                            .unwrap_or_else(|_| semver::Version::new(0, 0, 0));
                         ver_a.cmp(&ver_b)
                     })
                     .ok_or_else(|| anyhow::anyhow!("No valid versions found"))
@@ -306,7 +308,7 @@ impl Downloader {
 mod tests {
     use anyhow::Result;
 
-    use crate::{Target, DEFAULT_VERSION};
+    use crate::{DownloadOptions, Target, VersionSelection, DEFAULT_VERSION};
 
     use super::Downloader;
 
@@ -331,6 +333,62 @@ mod tests {
             .await
             .expect("Failed to perform download.");
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_specific_version_selection() -> Result<()> {
+        let specific_version = "14.0.4".to_string();
+        let options = DownloadOptions::default()
+            .with_version_selection(VersionSelection::Version(specific_version.clone()));
+
+        let downloader = Downloader::new_with_options(options).await?;
+        assert_eq!(downloader.version(), &specific_version);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_latest_version_selection() -> Result<()> {
+        let options = DownloadOptions::default().with_version_selection(VersionSelection::Latest);
+
+        let downloader = Downloader::new_with_options(options).await?;
+        let version = downloader.version();
+
+        // Version should be parseable as semver
+        assert!(semver::Version::parse(version).is_ok());
+
+        // Latest version should be >= default version
+        let latest_ver = semver::Version::parse(version).unwrap();
+        let default_ver = semver::Version::parse(DEFAULT_VERSION).unwrap();
+        assert!(latest_ver >= default_ver);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_stable_version_selection() -> Result<()> {
+        let options = DownloadOptions::default().with_version_selection(VersionSelection::Stable);
+
+        let downloader = Downloader::new_with_options(options).await?;
+        let version = downloader.version();
+
+        // Version should be parseable as semver
+        assert!(semver::Version::parse(version).is_ok());
+
+        // Should not contain alpha/beta/rc
+        assert!(!version.contains("alpha"));
+        assert!(!version.contains("beta"));
+        assert!(!version.contains("rc"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_default_version_selection() -> Result<()> {
+        let options = DownloadOptions::default();
+        let downloader = Downloader::new_with_options(options).await?;
+
+        assert_eq!(downloader.version(), DEFAULT_VERSION);
         Ok(())
     }
 }

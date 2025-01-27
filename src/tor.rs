@@ -22,10 +22,10 @@ impl Tor {
     /// of [`Tor`] to interact with Expert Bundle binaries.
     pub async fn setup_with_version(version_selection: VersionSelection) -> Result<Tor> {
         let downloader = Downloader::new_with_options(
-            DownloadOptions::default()
-                .with_version_selection(version_selection)
-        ).await?;
-        
+            DownloadOptions::default().with_version_selection(version_selection),
+        )
+        .await?;
+
         downloader.download().await?;
 
         Ok(Tor {
