@@ -239,14 +239,18 @@ impl Downloader {
 mod tests {
     use anyhow::Result;
 
+    use crate::{Target, DEFAULT_VERSION};
+
     use super::Downloader;
 
     #[test]
     fn build_download_url_for_default() -> Result<()> {
         let downloader = Downloader::new()?;
-        let download_url = downloader.download_url();
+        let target = Target::default();
+        let have = downloader.download_url();
+        let want = format!("https://archive.torproject.org/tor-package-archive/torbrowser/{DEFAULT_VERSION}/tor-expert-bundle-{target}-{DEFAULT_VERSION}.tar.gz");
 
-        assert_eq!(download_url, "https://archive.torproject.org/tor-package-archive/torbrowser/14.0.4/tor-expert-bundle-macos-x86_64-14.0.4.tar.gz");
+        assert_eq!(want, have);
 
         Ok(())
     }
