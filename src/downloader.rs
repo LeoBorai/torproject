@@ -4,7 +4,6 @@ use std::io;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use dirs::cache_dir;
 use flate2::read::GzDecoder;
 use tar::Archive;
 use tracing::{debug, info};
@@ -189,6 +188,8 @@ impl Downloader {
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     fn default_download_path() -> Result<PathBuf> {
+        use dirs::cache_dir;
+
         let mut download_path =
             cache_dir().context("No cache directory available on this platform.")?;
         download_path.push(DOWNLOAD_DIRECTORY);
@@ -199,7 +200,8 @@ impl Downloader {
     fn default_download_path() -> Result<PathBuf> {
         use dirs::home_dir;
 
-        let mut download_path = home_dir().context("No home directory available on this platform.")?;
+        let mut download_path =
+            home_dir().context("No home directory available on this platform.")?;
         download_path.push(DOWNLOAD_DIRECTORY);
         Ok(download_path)
     }
