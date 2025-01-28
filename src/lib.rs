@@ -1,7 +1,7 @@
 mod downloader;
 mod tor;
 
-pub use downloader::{Downloader, Target};
+pub use downloader::{Downloader, DownloadOptions, Target};
 pub use tor::Tor;
 
 pub(crate) const DEFAULT_VERSION: &str = "14.0.4";

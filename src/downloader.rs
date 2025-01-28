@@ -78,25 +78,71 @@ impl Display for Target {
     }
 }
 
+#[derive(Default)]
+pub struct DownloadOptions {
+    pub download_path: Option<PathBuf>,
+    pub target: Option<Target>,
+    pub version: Option<String>,
+}
+
+impl DownloadOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_download_path(mut self, download_path: PathBuf) -> Self {
+        self.download_path = Some(download_path);
+        self
+    }
+
+    pub fn with_target(mut self, target: Target) -> Self {
+        self.target = Some(target);
+        self
+    }
+
+    pub fn with_version<S: Into<String>>(mut self, version: S) -> Self {
+        self.version = Some(version.into());
+        self
+    }
+
+    pub fn build(self) -> Result<Downloader> {
+        let download_path = if let Some(download_path) = self.download_path {
+            download_path
+        } else {
+            Downloader::default_download_path()?
+        };
+
+        let target = self.target.unwrap_or_default();
+        let version = self.version.unwrap_or_else(|| DEFAULT_VERSION.to_string());
+
+        Ok(Downloader {
+            download_path,
+            target,
+            version,
+        })
+    }
+}
+
 /// Tor Expert Bundle Downloader
 /// https://www.torproject.org/download/tor/
 pub struct Downloader {
+    download_path: PathBuf,
     target: Target,
     version: String,
 }
 
-impl Default for Downloader {
-    fn default() -> Self {
-        Self {
-            target: Target::default(),
-            version: String::from(DEFAULT_VERSION),
-        }
-    }
-}
-
 impl Downloader {
-    pub fn new(target: Target, version: String) -> Self {
-        Self { target, version }
+    pub fn new() -> Result<Self> {
+        Self::new_with_options(DownloadOptions::default())
+    }
+
+    pub fn new_with_options(options: DownloadOptions) -> Result<Self> {
+        options.build()
+    }
+
+    #[inline]
+    pub fn download_path(&self) -> &PathBuf {
+        &self.download_path
     }
 
     #[inline]
@@ -124,15 +170,8 @@ impl Downloader {
         Ok(())
     }
 
-    pub fn download_dir_path(&self) -> PathBuf {
-        let mut download_path =
-            cache_dir().expect("No cache directory available on this platform.");
-        download_path.push(DOWNLOAD_DIRECTORY);
-        download_path
-    }
-
     pub fn download_tarball_path(&self) -> PathBuf {
-        self.download_dir_path().join(self.tarball_name())
+        self.download_path.join(self.tarball_name())
     }
 
     fn decompress_tarball(&self) -> Result<()> {
@@ -141,11 +180,18 @@ impl Downloader {
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
 
-        info!(download_dir_path=?self.download_dir_path(), "Unpacking tarball.");
+        info!(download_dir_path=?self.download_path, "Unpacking tarball.");
 
-        archive.unpack(self.download_dir_path())?;
+        archive.unpack(&self.download_path)?;
 
         Ok(())
+    }
+
+    fn default_download_path() -> Result<PathBuf> {
+        let mut download_path =
+            cache_dir().context("No cache directory available on this platform.")?;
+        download_path.push(DOWNLOAD_DIRECTORY);
+        Ok(download_path)
     }
 
     fn download_url(&self) -> String {
@@ -155,7 +201,7 @@ impl Downloader {
     }
 
     fn store_downloaded_assets(&self, bytes: Vec<u8>) -> Result<()> {
-        let download_path = self.download_dir_path();
+        let download_path = self.download_path.clone();
 
         if !download_path.exists() {
             create_dir(&download_path).context("Failed to create download directory.")?;
@@ -191,23 +237,29 @@ impl Downloader {
 
 #[cfg(test)]
 mod tests {
-    use super::{Downloader, Target, DEFAULT_VERSION};
+    use anyhow::Result;
+
+    use super::Downloader;
 
     #[test]
-    fn build_download_url_for_default() {
-        let downloader = Downloader::default();
+    fn build_download_url_for_default() -> Result<()> {
+        let downloader = Downloader::new()?;
         let download_url = downloader.download_url();
 
-        assert_eq!(download_url, "https://archive.torproject.org/tor-package-archive/torbrowser/14.0.4/tor-expert-bundle-macos-x86_64-14.0.4.tar.gz")
+        assert_eq!(download_url, "https://archive.torproject.org/tor-package-archive/torbrowser/14.0.4/tor-expert-bundle-macos-x86_64-14.0.4.tar.gz");
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn downloads() {
-        let downloader = Downloader::new(Target::MacOSAarch64, String::from(DEFAULT_VERSION));
+    async fn downloads() -> Result<()> {
+        let downloader = Downloader::new()?;
 
         downloader
             .download()
             .await
             .expect("Failed to perform download.");
+
+        Ok(())
     }
 }

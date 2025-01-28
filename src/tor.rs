@@ -20,12 +20,12 @@ impl Tor {
     /// Downloads Tor Expert Bundle into cache and creates an instance
     /// of [`Tor`] to interact with Expert Bundle binaries.
     pub async fn setup() -> Result<Tor> {
-        let downloader = Downloader::default();
+        let downloader = Downloader::new()?;
         downloader.download().await?;
 
         Ok(Tor {
             pid: None,
-            path: downloader.download_dir_path(),
+            path: downloader.download_path().to_owned(),
             version: downloader.version().to_owned(),
         })
     }
@@ -55,7 +55,7 @@ impl Tor {
         let mut reader = BufReader::new(stdout).lines();
 
         tokio::spawn(async move {
-            let status = child.wait().await.expect("Tor Process errored.");
+            child.wait().await.expect("Tor Process errored.");
         });
 
         while let Some(line) = reader.next_line().await? {
@@ -68,7 +68,7 @@ impl Tor {
     }
 
     pub fn kill(&self) -> Result<()> {
-        use nix::sys::signal::{SIGKILL, kill};
+        use nix::sys::signal::{kill, SIGKILL};
         use nix::unistd::Pid;
 
         if let Some(pid) = &self.pid {
