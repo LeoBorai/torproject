@@ -67,6 +67,7 @@ impl Tor {
         Ok(pid)
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn kill(&self) -> Result<()> {
         use nix::sys::signal::{kill, SIGKILL};
         use nix::unistd::Pid;
@@ -78,6 +79,12 @@ impl Tor {
         }
 
         anyhow::bail!("No process for Tor avaialable.")
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn kill(&self) -> Result<()> {
+        eprintln!("Not implemented!");
+        Ok(())
     }
 
     fn tor_bin_dir_path(&self) -> PathBuf {
