@@ -187,7 +187,7 @@ impl Downloader {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     fn default_download_path() -> Result<PathBuf> {
         let mut download_path =
             cache_dir().context("No cache directory available on this platform.")?;
