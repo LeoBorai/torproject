@@ -187,9 +187,19 @@ impl Downloader {
         Ok(())
     }
 
+    #[cfg(target_os = "macos")]
     fn default_download_path() -> Result<PathBuf> {
         let mut download_path =
             cache_dir().context("No cache directory available on this platform.")?;
+        download_path.push(DOWNLOAD_DIRECTORY);
+        Ok(download_path)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn default_download_path() -> Result<PathBuf> {
+        use dirs::home_dir;
+
+        let mut download_path = home_dir().context("No home directory available on this platform.")?;
         download_path.push(DOWNLOAD_DIRECTORY);
         Ok(download_path)
     }
