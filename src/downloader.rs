@@ -7,8 +7,10 @@ use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
 use tar::Archive;
 use tracing::{debug, info};
+use reqwest::Client;
+use scraper::{Html, Selector};
 
-use crate::{DEFAULT_VERSION, DOWNLOAD_DIRECTORY};
+use crate::{VersionSelection, DEFAULT_VERSION, DOWNLOAD_DIRECTORY};
 
 /// Tor Build Targets Available
 pub enum Target {
@@ -81,7 +83,7 @@ impl Display for Target {
 pub struct DownloadOptions {
     pub download_path: Option<PathBuf>,
     pub target: Option<Target>,
-    pub version: Option<String>,
+    pub version_selection: Option<VersionSelection>,
 }
 
 impl DownloadOptions {
@@ -99,20 +101,18 @@ impl DownloadOptions {
         self
     }
 
-    pub fn with_version<S: Into<String>>(mut self, version: S) -> Self {
-        self.version = Some(version.into());
+    pub fn with_version_selection(mut self, selection: VersionSelection) -> Self {
+        self.version_selection = Some(selection);
         self
     }
 
-    pub fn build(self) -> Result<Downloader> {
-        let download_path = if let Some(download_path) = self.download_path {
-            download_path
-        } else {
-            Downloader::default_download_path()?
-        };
-
+    pub async fn build(self) -> Result<Downloader> {
+        let download_path = self.download_path.unwrap_or_else(|| 
+            Downloader::default_download_path().expect("Failed to get default download path")
+        );
         let target = self.target.unwrap_or_default();
-        let version = self.version.unwrap_or_else(|| DEFAULT_VERSION.to_string());
+        let version_selection = self.version_selection.unwrap_or_default();
+        let version = Downloader::resolve_version(&version_selection).await?;
 
         Ok(Downloader {
             download_path,
@@ -132,11 +132,15 @@ pub struct Downloader {
 
 impl Downloader {
     pub fn new() -> Result<Self> {
-        Self::new_with_options(DownloadOptions::default())
+        Ok(Self {
+            download_path: Self::default_download_path()?,
+            target: Target::default(),
+            version: DEFAULT_VERSION.to_string(),
+        })
     }
 
-    pub fn new_with_options(options: DownloadOptions) -> Result<Self> {
-        options.build()
+    pub async fn new_with_options(options: DownloadOptions) -> Result<Self> {
+        options.build().await
     }
 
     #[inline]
@@ -244,6 +248,57 @@ impl Downloader {
             target = self.target,
             version = self.version
         )
+    }
+
+    async fn fetch_tor_versions() -> Result<Vec<String>> {
+        let client = Client::new();
+        let response = client
+            .get("https://archive.torproject.org/tor-package-archive/torbrowser/")
+            .send()
+            .await
+            .context("Failed to fetch Tor versions")?;
+            
+        let html = response.text().await?;
+        let document = Html::parse_document(&html);
+        
+        let selector = Selector::parse("a").unwrap();
+        let versions: Vec<String> = document
+            .select(&selector)
+            .filter_map(|el| {
+                let href = el.value().attr("href")?;
+                if href.ends_with('/') && href != "../" {
+                    Some(href.trim_end_matches('/').to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Ok(versions)
+    }
+
+    async fn resolve_version(selection: &VersionSelection) -> Result<String> {
+        match selection {
+            VersionSelection::Version(version) => Ok(version.clone()),
+            VersionSelection::Latest | VersionSelection::Stable => {
+                let versions = Self::fetch_tor_versions().await?;
+                versions
+                    .into_iter()
+                    .filter(|v| {
+                        if matches!(selection, VersionSelection::Stable) {
+                            !v.contains("alpha") && !v.contains("beta") && !v.contains("rc")
+                        } else {
+                            true
+                        }
+                    })
+                    .max_by(|a, b| {
+                        let ver_a = semver::Version::parse(a).unwrap_or_else(|_| semver::Version::new(0,0,0));
+                        let ver_b = semver::Version::parse(b).unwrap_or_else(|_| semver::Version::new(0,0,0));
+                        ver_a.cmp(&ver_b)
+                    })
+                    .ok_or_else(|| anyhow::anyhow!("No valid versions found"))
+            }
+        }
     }
 }
 

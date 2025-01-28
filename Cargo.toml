@@ -20,3 +20,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tar = "0.4.43"
 tokio = { version = "1.43", features = ["full"] }
 tracing = "0.1.41"
+scraper = "0.22.0"
+semver = "1.0.20"
