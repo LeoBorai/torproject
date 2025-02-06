@@ -6,6 +6,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 use super::{Downloader, DOWNLOAD_DIRECTORY_TOR};
+use crate::{DownloadOptions, VersionSelection};
 
 /// Message printed on Tor Console when completely bootstraped.
 const TOR_BOOTSTRAPED_LOG: &str = "Bootstrapped 100% (done): Done";
@@ -19,8 +20,12 @@ pub struct Tor {
 impl Tor {
     /// Downloads Tor Expert Bundle into cache and creates an instance
     /// of [`Tor`] to interact with Expert Bundle binaries.
-    pub async fn setup() -> Result<Tor> {
-        let downloader = Downloader::new()?;
+    pub async fn setup_with_version(version_selection: VersionSelection) -> Result<Tor> {
+        let downloader = Downloader::new_with_options(
+            DownloadOptions::default().with_version_selection(version_selection),
+        )
+        .await?;
+
         downloader.download().await?;
 
         Ok(Tor {
@@ -28,6 +33,11 @@ impl Tor {
             path: downloader.download_path().to_owned(),
             version: downloader.version().to_owned(),
         })
+    }
+
+    // Keep existing setup() for backward compatibility
+    pub async fn setup() -> Result<Tor> {
+        Self::setup_with_version(VersionSelection::default()).await
     }
 
     #[inline]
