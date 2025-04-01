@@ -37,7 +37,10 @@ impl Tor {
 
     // Keep existing setup() for backward compatibility
     pub async fn setup() -> Result<Tor> {
-        Self::setup_with_version(VersionSelection::default()).await
+        let tor = Self::setup_with_version(VersionSelection::default()).await?;
+        tor.post_setup()
+            .with_context(|| Error::msg("Failed to perform Post-Setup Procedure."))?;
+        Ok(tor)
     }
 
     #[inline]
@@ -94,6 +97,31 @@ impl Tor {
     #[cfg(target_os = "windows")]
     pub fn kill(&self) -> Result<()> {
         eprintln!("Not implemented!");
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn post_setup(&self) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn post_setup(&self) -> Result<()> {
+        use std::env::{set_var, var};
+
+        const LD_LIBRARY_PATH: &str = "LD_LIBRARY_PATH";
+
+        let bin_dir_path = self.tor_bin_dir_path().display().to_string();
+        let ld_library_path = var(LD_LIBRARY_PATH).unwrap_or_default();
+
+        // check if the bin dir path is already in the LD_LIBRARY_PATH,
+        if !ld_library_path.contains(&bin_dir_path) {
+            set_var(
+                LD_LIBRARY_PATH,
+                format!("{}:{}", ld_library_path, self.tor_bin_dir_path().display()),
+            );
+        }
+
         Ok(())
     }
 
