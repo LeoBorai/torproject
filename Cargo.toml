@@ -16,7 +16,7 @@ anyhow = "1.0"
 dirs = "6.0"
 flate2 = "1.1"
 nix = { version = "0.31", default-features = false, features = ["signal"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "socks"] }
+reqwest = { version = "0.13", features = ["socks"] }
 tar = "0.4"
 tokio = { version = "1.52", features = ["full"] }
 tracing = "0.1"
