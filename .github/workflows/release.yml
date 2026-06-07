@@ -16,13 +16,14 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  id-token: write
 
 jobs:
   publish-dry-run:
     name: "Runs cargo publish --dry-run"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Rust
@@ -31,91 +32,45 @@ jobs:
       - name: publish crate
         run: cargo publish --dry-run
 
-  tag-bump:
-    name: Tag Bump
+  release:
+    name: Create Release
     needs: publish-dry-run
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.set-tag.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust Cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Setup Cargo Binstall
         uses: cargo-bins/cargo-binstall@main
 
       - name: Install Rust Binaries
         run: |
-          cargo binstall -y --force cargo-edit
+          cargo binstall -y --force cargo-tag
 
-      - id: cargo-set-version
-        name: Set Version
-        run: cargo set-version --bump ${{ inputs.version }}
-
-      - name: Set Tag as Output
-        id: set-tag
-        run: |
-          CARGO_TOML_VERSION=$(awk -F ' = ' '$1 ~ /version/ { gsub(/[\"]/, "", $2); printf("%s",$2) }' Cargo.toml)
-          echo "::set-output name=tag::$CARGO_TOML_VERSION"
-
-      - name: Print Tag
-        run: echo ${{ steps.set-tag.outputs.tag }}
-
-      - name: Create Commit
+      - name: Bump Version
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .
-          git commit -m "chore: bump version to v${{ steps.set-tag.outputs.tag }}"
+          echo "CRATE_VERSION=$(cargo tag -p=v ${{ inputs.version }})" >> $GITHUB_ENV
           git push origin main --follow-tags
 
-
-  release:
-    name: Create Release
-    needs: tag-bump
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create Release
-        id: create_release
-        uses: actions/github-script@v5
-        with:
-          script: |
-            await github.request(`POST /repos/${{ github.repository }}/releases`, {
-              tag_name: "v${{ needs.tag-bump.outputs.tag }}",
-              generate_release_notes: true
-            });
-
-  publish:
-    name: Publish to Crates.io
-    needs:
-      - release
-      - tag-bump
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: "refs/tags/v${{ needs.tag-bump.outputs.tag }}"
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Login to Crates.io
-        run: cargo login ${CRATES_IO_TOKEN}
-        env:
-          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
 
       - name: Publish crate
         run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Create Release
+        run: |
+          gh release create "$CRATE_VERSION" \
+            --title "$CRATE_VERSION" \
+            --draft=false \
+            --generate-notes \
+            --prerelease=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
