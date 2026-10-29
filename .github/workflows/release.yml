@@ -1,35 +1,45 @@
 name: release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        type: choice
-        required: true
-        description: 'Version number to bump'
-        options:
-          - patch
-          - minor
-          - major
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
-  issues: write
-  pull-requests: write
   id-token: write
+
+concurrency:
+  group: "${{ github.workflow }}"
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   publish-dry-run:
-    name: "Runs cargo publish --dry-run"
+    name: Runs cargo publish --dry-run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check tag matches Cargo.toml version
+        run: |
+          cargo_version="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version/{gsub(/.*= *"|".*/,""); print; exit}' Cargo.toml)"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ -z "$cargo_version" || "$tag_version" != "$cargo_version" ]]; then
+            echo "::error::tag '$GITHUB_REF_NAME' does not match the Cargo.toml version '$cargo_version'"
+            exit 1
+          fi
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: publish crate
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish dry run
         run: cargo publish --dry-run
 
   release:
@@ -38,24 +48,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Cargo Binstall
-        uses: cargo-bins/cargo-binstall@main
-
-      - name: Install Rust Binaries
-        run: |
-          cargo binstall -y --force cargo-tag
-
-      - name: Bump Version
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          echo "CRATE_VERSION=$(cargo tag -p=v ${{ inputs.version }})" >> $GITHUB_ENV
-          git push origin main --follow-tags
 
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
@@ -67,8 +63,8 @@ jobs:
 
       - name: Create Release
         run: |
-          gh release create "$CRATE_VERSION" \
-            --title "$CRATE_VERSION" \
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
             --draft=false \
             --generate-notes \
             --prerelease=false
