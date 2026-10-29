@@ -22,6 +22,16 @@ const COOKIE_LEN: usize = 32;
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
+const TOR_LOG_FILE: &str = "tor.log";
+
+/// Last lines of Tor's own log, to explain a failed start.
+fn log_tail(log_file: &Path) -> String {
+    let content = read_to_string(log_file).unwrap_or_else(|_| "<no log written>".into());
+    let lines: Vec<&str> = content.lines().collect();
+
+    lines[lines.len().saturating_sub(20)..].join("\n")
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -82,12 +92,14 @@ impl Tor {
         let tor_bin = bin_path.join("tor");
         let data_dir = self.path.join(TOR_DATA_DIRECTORY);
         let port_file = data_dir.join(CONTROL_PORT_FILE);
+        let log_file = data_dir.join(TOR_LOG_FILE);
         let cookie_file = data_dir.join(CONTROL_COOKIE_FILE);
 
         create_dir_all(&data_dir).context("Failed to create Tor data directory.")?;
         // Discard leftovers from a previous run, so stale values are never read.
         let _ = remove_file(&port_file);
         let _ = remove_file(&cookie_file);
+        let _ = remove_file(&log_file);
 
         let mut child = Command::new(tor_bin)
             .arg("--DataDirectory")
@@ -97,6 +109,8 @@ impl Tor {
             .arg(&port_file)
             .arg("--CookieAuthFile")
             .arg(&cookie_file)
+            .arg("--Log")
+            .arg(format!("notice file {}", log_file.display()))
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -105,16 +119,22 @@ impl Tor {
 
         self.pid = Some(pid);
 
+        let mut stage = String::from("starting");
         let bootstrapped = timeout(
             BOOTSTRAP_TIMEOUT,
-            Self::wait_bootstrapped(&mut child, &port_file, &cookie_file),
+            Self::wait_bootstrapped(&mut child, &port_file, &cookie_file, &mut stage),
         )
         .await;
 
-        match bootstrapped {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) => return Err(err),
-            Err(_) => anyhow::bail!("Timed out waiting for Tor to bootstrap."),
+        let failure = match bootstrapped {
+            Ok(Ok(())) => None,
+            Ok(Err(err)) => Some(format!("{err:#}")),
+            Err(_) => Some(format!("Timed out waiting for Tor to bootstrap ({stage}).")),
+        };
+
+        if let Some(failure) = failure {
+            let _ = child.start_kill();
+            anyhow::bail!("{failure}\nTor log:\n{}", log_tail(&log_file));
         }
 
         tokio::spawn(async move {
@@ -129,9 +149,13 @@ impl Tor {
         child: &mut Child,
         port_file: &Path,
         cookie_file: &Path,
+        stage: &mut String,
     ) -> Result<()> {
+        *stage = "waiting for ControlPort file".into();
         let addr = Self::wait_for_control_addr(child, port_file).await?;
+        *stage = "waiting for auth cookie".into();
         let cookie = Self::wait_for_cookie(child, cookie_file).await?;
+        *stage = format!("connecting to ControlPort {addr}");
         let stream = TcpStream::connect(addr)
             .await
             .context("Failed to connect to Tor ControlPort.")?;
@@ -139,6 +163,7 @@ impl Tor {
         let mut reader = BufReader::new(read);
 
         let auth = format!("AUTHENTICATE {}\r\n", hex(&cookie));
+        *stage = "authenticating".into();
         Self::control_command(&mut reader, &mut write, &auth)
             .await
             .context("Tor ControlPort authentication failed.")?;
@@ -154,6 +179,8 @@ impl Tor {
                 "GETINFO status/bootstrap-phase\r\n",
             )
             .await?;
+
+            *stage = format!("bootstrap-phase: {}", reply.join(" | "));
 
             if bootstrap_progress(&reply) == Some(100) {
                 return Ok(());
