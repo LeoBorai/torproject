@@ -5,6 +5,10 @@ pub(crate) const DEFAULT_VERSION: &str = "15.0.26";
 pub(crate) const DOWNLOAD_DIRECTORY: &str = "RustTorProject";
 pub(crate) const DOWNLOAD_DIRECTORY_TOR: &str = "tor";
 
+/// Serializes tests that run Tor, since they all bind the same SOCKS port.
+#[cfg(test)]
+pub(crate) static TOR_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 mod downloader;
 mod tor;
 
@@ -33,6 +37,7 @@ mod tests {
 
     #[tokio::test]
     async fn check_tor_conn() -> Result<()> {
+        let _guard = crate::TOR_LOCK.lock().await;
         let mut tor = Tor::setup().await?;
         tor.run().await?;
         let proxy = Proxy::all(TOR_SOCK5_LOCAL)?;
