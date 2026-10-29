@@ -187,6 +187,39 @@ impl Downloader {
 
         archive.unpack(&self.download_path)?;
 
+        #[cfg(target_os = "macos")]
+        self.codesign_binaries()?;
+
+        Ok(())
+    }
+
+    /// Apple Silicon refuses to load Mach-O files without a code signature.
+    /// The bundle ships unsigned binaries, so sign them ad-hoc after unpacking.
+    #[cfg(target_os = "macos")]
+    fn codesign_binaries(&self) -> Result<()> {
+        use std::process::Command;
+
+        let tor_dir = self.download_path.join("tor");
+
+        for entry in std::fs::read_dir(&tor_dir).context("Failed to read Tor directory.")? {
+            let path = entry?.path();
+            let is_macho = path.is_file()
+                && (path.extension().is_some_and(|ext| ext == "dylib")
+                    || path.file_name().is_some_and(|name| name == "tor"));
+
+            if !is_macho {
+                continue;
+            }
+
+            let status = Command::new("codesign")
+                .args(["--force", "--sign", "-"])
+                .arg(&path)
+                .status()
+                .context("Failed to run codesign.")?;
+
+            anyhow::ensure!(status.success(), "codesign failed for {}", path.display());
+        }
+
         Ok(())
     }
 
