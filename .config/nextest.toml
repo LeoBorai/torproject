@@ -1,0 +1,8 @@
+# Tests share the download directory and Tor's SOCKS port 9050, so they must not overlap.
+# `serial_test` only serializes within one process, and nextest runs each test in its own.
+[test-groups]
+tor = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "all()"
+test-group = "tor"
