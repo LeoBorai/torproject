@@ -28,7 +28,7 @@ mod tests {
 
     use crate::Tor;
 
-    const TOR_CHECK_WEB: &str = "https://check.torproject.org/";
+    const TOR_CHECK_API: &str = "https://check.torproject.org/api/ip";
     const TOR_SOCK5_LOCAL: &str = "socks5://127.0.0.1:9050";
 
     #[tokio::test]
@@ -37,10 +37,11 @@ mod tests {
         tor.run().await?;
         let proxy = Proxy::all(TOR_SOCK5_LOCAL)?;
         let client = Client::builder().proxy(proxy).build()?;
-        let res_html = client.get(TOR_CHECK_WEB).send().await?.text().await?;
-        let contains = res_html.contains("Congratulations. This browser is configured to use Tor.");
+        let res_body = client.get(TOR_CHECK_API).send().await?.text().await?;
+        let res_json: serde_json::Value = serde_json::from_str(&res_body)?;
 
-        assert!(contains);
+        assert_eq!(res_json["IsTor"], serde_json::Value::Bool(true));
+        assert!(res_json["IP"].is_string());
 
         Ok(())
     }
