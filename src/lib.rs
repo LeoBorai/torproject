@@ -1,13 +1,9 @@
 pub use downloader::{DownloadOptions, Downloader, Target};
 pub use tor::Tor;
 
-pub(crate) const DEFAULT_VERSION: &str = "15.0.26";
+pub const DEFAULT_VERSION: &str = "15.0.26";
 pub(crate) const DOWNLOAD_DIRECTORY: &str = "RustTorProject";
 pub(crate) const DOWNLOAD_DIRECTORY_TOR: &str = "tor";
-
-/// Serializes tests that run Tor, since they all bind the same SOCKS port.
-#[cfg(test)]
-pub(crate) static TOR_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 mod downloader;
 mod tor;
@@ -22,32 +18,5 @@ pub enum VersionSelection {
 impl Default for VersionSelection {
     fn default() -> Self {
         Self::Version(DEFAULT_VERSION.to_string())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use anyhow::Result;
-    use reqwest::{Client, Proxy};
-
-    use crate::Tor;
-
-    const TOR_CHECK_API: &str = "https://check.torproject.org/api/ip";
-    const TOR_SOCK5_LOCAL: &str = "socks5://127.0.0.1:9050";
-
-    #[tokio::test]
-    async fn check_tor_conn() -> Result<()> {
-        let _guard = crate::TOR_LOCK.lock().await;
-        let mut tor = Tor::setup().await?;
-        tor.run().await?;
-        let proxy = Proxy::all(TOR_SOCK5_LOCAL)?;
-        let client = Client::builder().proxy(proxy).build()?;
-        let res_body = client.get(TOR_CHECK_API).send().await?.text().await?;
-        let res_json: serde_json::Value = serde_json::from_str(&res_body)?;
-
-        assert_eq!(res_json["IsTor"], serde_json::Value::Bool(true));
-        assert!(res_json["IP"].is_string());
-
-        Ok(())
     }
 }

@@ -287,38 +287,3 @@ impl Drop for Tor {
         let _ = self.kill();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::{Tor, DEFAULT_VERSION};
-
-    #[test]
-    fn parses_bootstrap_progress() {
-        let reply = vec![
-            "250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY=\"Done\""
-                .to_string(),
-            "250 OK".to_string(),
-        ];
-
-        assert_eq!(super::bootstrap_progress(&reply), Some(100));
-        assert_eq!(super::bootstrap_progress(&["250 OK".to_string()]), None);
-    }
-
-    #[tokio::test]
-    async fn setup_tor_instance() {
-        let tor = Tor::setup().await.expect("Failed to setup a Tor instance.");
-        let version = tor.version();
-
-        assert_eq!(version, DEFAULT_VERSION);
-    }
-
-    #[tokio::test]
-    async fn pid_returned_by_run_matches() {
-        let _guard = crate::TOR_LOCK.lock().await;
-        let mut tor = Tor::setup().await.expect("Failed to setup a Tor instance.");
-        let tor_pid = tor.run().await.expect("Failed to run Tor Proxy");
-        let instance_pid = tor.pid().unwrap();
-
-        assert_eq!(tor_pid, instance_pid);
-    }
-}
